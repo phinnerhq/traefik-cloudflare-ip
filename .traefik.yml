@@ -1,0 +1,8 @@
+displayName: Cloudflare IP
+type: middleware
+import: github.com/phinnerhq/traefik-cloudflare-ip
+basePkg: cloudflareip
+summary: Restores the visitor IP of requests proxied by Cloudflare, trusting Cloudflare's own ranges only.
+
+testData:
+  refreshInterval: 24h

@@ -1,0 +1,78 @@
+name: "Build"
+
+on:
+  push:
+    branches: [ "**" ]
+    tags-ignore: [ "**" ]
+    paths-ignore: [ "**/*.md" ]
+  pull_request:
+    paths-ignore: [ "**/*.md" ]
+
+concurrency:
+  group: "${{ github.workflow }}-${{ github.event.number || github.ref }}"
+  cancel-in-progress: true
+
+env:
+  YAEGI_VERSION: "v0.16.1" # The one Traefik v3.7 runs plugins with
+
+jobs:
+
+  test:
+    name: "Test"
+    # Only run on PRs if the source branch is on someone else's repo
+    if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+
+      - name: "Checkout Repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: "Setup Go"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: "go.mod"
+
+      - name: "Check Formatting"
+        run: test -z "$(gofmt -l .)" || { gofmt -d .; exit 1; }
+
+      - name: "Vet"
+        run: go vet ./...
+
+      - name: "Test"
+        run: go test -race ./...
+
+  # Traefik interprets plugins with Yaegi rather than compiling them, so the tests also run under it
+  yaegi:
+    name: "Yaegi"
+    if: ${{ github.event_name != 'pull_request' || github.repository != github.event.pull_request.head.repo.full_name }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      GOPATH: "${{ github.workspace }}/go"
+      GO111MODULE: "off"
+    defaults:
+      run:
+        working-directory: "go/src/github.com/${{ github.repository }}"
+    steps:
+
+      # Yaegi resolves imports from a GOPATH layout
+      - name: "Checkout Repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          path: "go/src/github.com/${{ github.repository }}"
+
+      - name: "Setup Go"
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: "go/src/github.com/${{ github.repository }}/go.mod"
+
+      - name: "Install Yaegi"
+        run: GO111MODULE=on go install "github.com/traefik/yaegi/cmd/yaegi@$YAEGI_VERSION"
+
+      - name: "Test"
+        run: "$GOPATH/bin/yaegi test -v ."
